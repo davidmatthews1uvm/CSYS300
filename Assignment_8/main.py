@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import numba
 from tqdm import tqdm 
+from joblib import Parallel, delayed 
 
 @numba.jit
 def candidate_tree_cost(tree_index, world, ag_id_sizes, ag_id_prob, cost, spark_probs):
@@ -19,8 +20,8 @@ def candidate_tree_cost(tree_index, world, ag_id_sizes, ag_id_prob, cost, spark_
                 tmp = tree_index.copy()
                 tmp[i] += j
                 neighbor_tree_id = world[tmp[0], tmp[1]]
-                neighbors[i*2+(j+1)//2] = neighbor_tree_id
-                if (neighbor_tree_id != 0):
+                if (neighbor_tree_id not in neighbors):
+                    neighbors[i*2+(j+1)//2] = neighbor_tree_id
                     neighbor_size = ag_id_sizes[neighbor_tree_id]
                     neighbor_burn_prob = ag_id_prob[neighbor_tree_id]
                     new_forest_size += neighbor_size
@@ -28,10 +29,9 @@ def candidate_tree_cost(tree_index, world, ag_id_sizes, ag_id_prob, cost, spark_
                     cost_correction_factor += neighbor_size * neighbor_burn_prob
     return cost + new_forest_size * new_burn_prob - cost_correction_factor, neighbors
 
-l_b = 1/10
 def build_forest(L, D, l_b=1/10):
     l = L*l_b
-    spark_probs = np.fromfunction(lambda i, j: np.exp(-i/l)*np.exp(-j/l), shape=(L,L))
+    spark_probs = np.fromfunction(lambda i, j: np.exp(-(i+1)/l)*np.exp(-(j+1)/l), shape=(L,L))
     spark_probs /= np.sum(spark_probs) # normalize the probability.
 
     world = np.zeros((L, L), dtype=np.int32) # keep track of the trees in the world.
@@ -43,7 +43,7 @@ def build_forest(L, D, l_b=1/10):
 
     MAX_MERGES = 10
 
-    for iter in tqdm(range(L*L)):
+    for iteration_num in tqdm(range(L*L)):
         # print(world, tree_id)
         # print(iter)
         empty_spots = np.argwhere(world==0)
@@ -57,12 +57,15 @@ def build_forest(L, D, l_b=1/10):
         min_spot_neighbors = None
         for t_id in trees_to_test:
             new_cost, neighbors = candidate_tree_cost(empty_spots[t_id], world, ag_id_sizes, ag_id_prob, cost, spark_probs)
+            # if (iteration_num == 202):
+            #     print(t_id, empty_spots[t_id], new_cost, neighbors)
             if (new_cost < min_new_cost):
                 min_new_spot = t_id
                 min_spot_neighbors = neighbors
                 min_new_cost = new_cost
-        if (min_new_cost > 1) :
-            return (world, ag_id_sizes, ag_id_prob)
+        if (min_new_cost  > cost + 1):
+            print(min_new_cost, cost, iteration_num, neighbors, min_new_spot, empty_spots[min_new_spot])
+            return (cost, world, ag_id_sizes, ag_id_prob)
 
         cost = min_new_cost
         # print(min_new_cost, empty_spots[min_new_spot], min_spot_neighbors )
@@ -119,11 +122,11 @@ def build_forest(L, D, l_b=1/10):
             ag_id_sizes[next_forest_id] = 1
             ag_id_prob[next_forest_id] = spark_probs[x, y]
             next_forest_id += 1
-    return (world, ag_id_sizes, ag_id_prob)
+    return (cost, world, ag_id_sizes, ag_id_prob)
 
 if __name__ == '__main__':
-    world, ag_id_sizes, ag_id_prob = build_forest(64, 64**2)
+    N = 128
+    cost, world, ag_id_sizes, ag_id_prob = build_forest(N, N**2)
     plt.imshow(world > 0)
     plt.show()
-    plt.imshow(world)
-    plt.show()
+    print(np.sum((world!=0)) - cost)
