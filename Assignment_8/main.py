@@ -45,7 +45,7 @@ def build_forest(L, D, l_b=1/10, container=None, stream=None, early_termination=
 
     world = np.zeros((L, L), dtype=np.int32) # keep track of the trees in the world.
     best_world = np.zeros((L, L), dtype=np.int32)
-    best_world_saved = False
+    best_world_saved_step_id = 0
     ag_id_sizes = np.zeros((L*L), dtype=np.int32) # keep track of each forest size
     ag_id_sizes_history = np.zeros((L*L, L*L), dtype=np.int32)
     ag_id_prob = np.zeros((L*L), dtype=np.float64) # keep track of each forest burn probability
@@ -93,9 +93,9 @@ def build_forest(L, D, l_b=1/10, container=None, stream=None, early_termination=
                 min_spot_neighbors = neighbors
                 min_new_cost = new_cost
 
-        if (not best_world_saved and min_new_cost  > cost + 1  ):
+        if (best_world_saved_step_id == 0 and min_new_cost  > cost + 1  ):
             best_world[:] = world[:]
-            best_world_saved = True
+            best_world_saved_step_id = iteration_num
             if (early_termination):
                 # print(old_cost, min_new_cost, cost, iteration_num, neighbors, min_new_spot, empty_spots[min_new_spot])
                 # if we have not already saved the current world to the video, do so now.
@@ -107,7 +107,7 @@ def build_forest(L, D, l_b=1/10, container=None, stream=None, early_termination=
                     frame = av.VideoFrame.from_ndarray(img, format='rgb24')
                     for packet in stream.encode(frame):
                         container.mux(packet)
-                return (cost, world, ag_id_sizes, ag_id_prob, yield_history, ag_id_sizes_history, best_world)
+                return (cost, world, ag_id_sizes, ag_id_prob, yield_history, ag_id_sizes_history, best_world, best_world_saved_step_id)
 
         old_cost = min_new_cost
         # print(min_new_cost, empty_spots[min_new_spot], min_spot_neighbors )
@@ -173,7 +173,7 @@ def build_forest(L, D, l_b=1/10, container=None, stream=None, early_termination=
         # print(old_cost, cost, abs(cost-old_cost)/cost)
             # return ( cost, world, ag_id_sizes, ag_id_prob)
     print(next_forest_id )
-    return (cost, world, ag_id_sizes, ag_id_prob, yield_history, ag_id_sizes_history, best_world)
+    return (cost, world, ag_id_sizes, ag_id_prob, yield_history, ag_id_sizes_history, best_world, best_world_saved_step_id)
 
 global N
 # global TILE_SIZE, FRAME_SUBSAMPLE
@@ -200,37 +200,82 @@ if __name__ == '__main__':
     # stream.height = STREAM_SIZE
     # stream.pix_fmt = 'yuv420p'
 
-    N = 64
+    N = 128
     data_dict = dict()
     name_dict = {1:"1", 2:"2", N:"L", N*N:"L^2"}
     for D in [1, 2, N, N*N]:
-        cost, world, ag_id_sizes, ag_id_prob,  yield_history, ag_id_sizes_history, best_world = build_forest(N, D, early_termination=False) #, container=container, stream=stream)
-        data_dict[D] = (cost, world, ag_id_sizes, ag_id_prob,  yield_history, ag_id_sizes_history, best_world)
+        cost, world, ag_id_sizes, ag_id_prob,  yield_history, ag_id_sizes_history, best_world, best_world_saved_step_id = build_forest(N, D, early_termination=False) #, container=container, stream=stream)
+        data_dict[D] = (cost, world, ag_id_sizes, ag_id_prob,  yield_history, ag_id_sizes_history, best_world, best_world_saved_step_id)
     
     # Part 3a
     fig, axs = plt.subplots(2,2, figsize=(9, 9))
-    (cost, world, ag_id_sizes, ag_id_prob,  yield_history, ag_id_sizes_history, best_world) = data_dict[1]
-    axs[0,0].imshow(best_world!=0, cmap=plt.cm.gray)
+    (cost, world, ag_id_sizes, ag_id_prob,  yield_history, ag_id_sizes_history, best_world, best_world_saved_step_id) = data_dict[1]
+    print((best_world!=0).sum(), yield_history[best_world_saved_step_id], )
+    axs[0,0].imshow(best_world!=0, cmap=plt.cm.gray, interpolation='nearest', aspect='auto')
     axs[0,0].set_title("$D=1$")
-    (cost, world, ag_id_sizes, ag_id_prob,  yield_history, ag_id_sizes_history, best_world) = data_dict[2]
-    axs[0,1].imshow(best_world!=0, cmap=plt.cm.gray)
+    (cost, world, ag_id_sizes, ag_id_prob,  yield_history, ag_id_sizes_history, best_world, best_world_saved_step_id) = data_dict[2]
+    print((best_world!=0).sum(), yield_history[best_world_saved_step_id])
+    axs[0,1].imshow(best_world!=0, cmap=plt.cm.gray, interpolation="none")
     axs[0,1].set_title("$D=2$")
-    (cost, world, ag_id_sizes, ag_id_prob,  yield_history, ag_id_sizes_history, best_world) = data_dict[N]
-    axs[1,0].imshow(best_world!=0, cmap=plt.cm.gray)
+    (cost, world, ag_id_sizes, ag_id_prob,  yield_history, ag_id_sizes_history, best_world, best_world_saved_step_id) = data_dict[N]
+    print((best_world!=0).sum(), yield_history[best_world_saved_step_id])
+    axs[1,0].imshow(best_world!=0, cmap=plt.cm.gray, interpolation="none")
     axs[1,0].set_title("$D=L$")
-    (cost, world, ag_id_sizes, ag_id_prob,  yield_history, ag_id_sizes_history, best_world) = data_dict[N*N]
-    axs[1,1].imshow(best_world!=0, cmap=plt.cm.gray)
+    (cost, world, ag_id_sizes, ag_id_prob,  yield_history, ag_id_sizes_history, best_world, best_world_saved_step_id) = data_dict[N*N]
+    print((best_world!=0).sum(), yield_history[best_world_saved_step_id])
+    axs[1,1].imshow(best_world!=0, cmap=plt.cm.gray, interpolation="none")
     axs[1,1].set_title("$D=L^2$")
     plt.savefig("Part3a.pdf")
 
     # Part 3b
     for D in data_dict.keys():
-        (cost, world, ag_id_sizes, ag_id_prob,  yield_history, ag_id_sizes_history, best_world) = data_dict[D]
+        (cost, world, ag_id_sizes, ag_id_prob,  yield_history, ag_id_sizes_history, best_world, best_world_saved_step_id) = data_dict[D]
         plt.plot(np.linspace(0, 1, N*N), yield_history / (N*N), label="$D=%s$"%(name_dict[D]))
         plt.ylabel("Yield")
         plt.xlabel("Trees planted")
         plt.legend()
     plt.savefig("Part3b.pdf")
+
+    # Part 3c
+    for D in data_dict.keys():
+        (cost, world, ag_id_sizes, ag_id_prob,  yield_history, ag_id_sizes_history, best_world, best_world_saved_step_id) = data_dict[D]    
+        peak_yield_sizes = ag_id_sizes_history[best_world_saved_step_id]
+        peak_yield_sizes = sorted(peak_yield_sizes[peak_yield_sizes != 0], reverse=True)
+        plt.plot(np.arange(len(peak_yield_sizes))+1, np.array(peak_yield_sizes), label="D=%d"%(D))
+    plt.yscale("log")
+    plt.xscale("log")
+    plt.ylabel("Number of Trees per forest")
+    plt.xlabel("Forest Size Rank")
+    plt.legend()
+    plt.savefig("Part3c.pdf")
+
+    # Part 3d
+    (cost, world, ag_id_sizes, ag_id_prob,  yield_history, ag_id_sizes_history, best_world, best_world_saved_step_id) = data_dict[N*N]
+    for step_id_to_plot in (np.arange(1, 10) * N*N/10 + 1).astype(np.int):
+        peak_yield_sizes = ag_id_sizes_history[step_id_to_plot]
+        peak_yield_sizes = sorted(peak_yield_sizes[peak_yield_sizes != 0], reverse=True)
+        plt.plot(np.arange(len(peak_yield_sizes))+1, np.array(peak_yield_sizes), label="$\\rho={:.2f}$".format((step_id_to_plot)/(N*N)))
+    plt.yscale("log")
+    plt.xscale("log")
+    plt.ylabel("Number of Trees per forest")
+    plt.xlabel("Forest Size Rank")
+    plt.legend()
+    plt.savefig("Part3d.pdf")
+
+    # Part 3d CDF
+    (cost, world, ag_id_sizes, ag_id_prob,  yield_history, ag_id_sizes_history, best_world, best_world_saved_step_id) = data_dict[N*N]
+    for step_id_to_plot in (np.arange(1, 10) * N*N/10 + 1).astype(np.int):
+        peak_yield_sizes = ag_id_sizes_history[step_id_to_plot]
+        peak_size_cdf = sorted(peak_yield_sizes[peak_yield_sizes!=0])
+        num_ge_size = range(len(peak_size_cdf), 0, -1)
+        plt.plot(peak_size_cdf, num_ge_size,  label="$\\rho={:.2f}$".format((step_id_to_plot)/(N*N)))
+    plt.yscale("log")
+    plt.xscale("log")
+    plt.ylabel("Number of Trees per forest")
+    plt.xlabel("Forest Size Rank")
+    plt.legend()
+    plt.savefig("Part3d_CDF.pdf")
+
     # plt.imshow(world!=0)
     # plt.savefig("L{:d}D{:d}top.png".format(N, N**2))
     # print(np.sum((world!=0)) - cost)
